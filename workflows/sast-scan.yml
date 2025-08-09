@@ -1,31 +1,40 @@
-name: SAST Scan with Semgrep
+# inside jobs.semgrep.steps (replace your existing "Run Semgrep scan" + upload steps)
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+- name: Install Python & Semgrep
+  uses: actions/setup-python@v4
+  with:
+    python-version: '3.x'
 
-jobs:
-  semgrep:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+- name: Run Semgrep and produce SARIF
+  run: |
+    pip install semgrep
+    # generate SARIF output
+    semgrep --config=auto --sarif --output=semgrep.sarif .
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
+- name: Install Node (for SARIF -> HTML converter)
+  uses: actions/setup-node@v4
+  with:
+    node-version: '20'
 
-      - name: Install Semgrep
-        run: pip install semgrep
+- name: Install sarif-explorer (example converter) and convert to HTML
+  run: |
+    # sarif-explorer is an example npm tool that converts SARIF -> interactive HTML
+    # you can replace this with another converter (qodana/sarif-converter, microsoft sarif-tools, etc.)
+    npm install -g sarif-explorer || true
+    # If sarif-explorer binary is 'sarif-explorer' and supports input-output:
+    # (some tools expose slightly different CLIs — check the tool's README)
+    if command -v sarif-explorer >/dev/null 2>&1; then
+      sarif-explorer semgrep.sarif -o semgrep-report.html || echo "sarif-explorer failed"
+    else
+      echo "sarif-explorer not available; listing SARIF file"
+      ls -la semgrep.sarif
+    fi
 
-      - name: Run Semgrep scan
-        run: semgrep --config=auto --error --json --output=semgrep-results.json .
+- name: Upload SARIF + HTML report artifacts
+  uses: actions/upload-artifact@v3
+  with:
+    name: semgrep-reports
+    path: |
+      semgrep.sarif
+      semgrep-report.html
 
-      - name: Upload scan results
-        uses: actions/upload-artifact@v3
-        with:
-          name: semgrep-results
-          path: semgrep-results.json
